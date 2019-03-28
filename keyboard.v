@@ -22,42 +22,38 @@
 
 module keyboard(
     input clk, ps2clk, ps2data,
-    output reg [1:0] an,
+    output [3:0] an,
     output [6:0] sseg,
-    output reg strobe
+    output strobe
     );
     
    wire [6:0] sseg0, sseg1;
    wire [21:0] code;
    wire [7:0] code_out;
-   reg [7:0] hold;
-   wire [1:0] anout;
-   wire clk10hz;
+   reg [7:0] hold, code_hold;
    
    assign code_out = hold;
    
    initial begin
    hold = 0;
-   an = 2'b11;
-   strobe = 0;
+   code_hold = 0;
    end
    
-   clkdiv10hz c0 (clk,clk10hz);
    
    hexto7segment h0 (code_out[3:0],sseg0);
    hexto7segment h1 (code_out[7:4],sseg1);
    
-   displayLogic d0 (clk,sseg0,sseg1,anout,sseg);
+   displayLogic d0 (clk,sseg0,sseg1,code_out,an,sseg);
    
    inputcapture(ps2clk,ps2data,code);
    
+   strobe s0 (clk,code_out,strobe);
+   
    always@(*)begin
-        if(code[8:1] == 8'hf0) hold = code[19:12];
+        if(code[8:1] == 8'hf0) begin hold = code[19:12]; code_hold = code[19:12]; end
+            else hold = code_hold;
    end
    
-   always@(hold) an = anout;
-   
-
 endmodule
 
 
@@ -91,21 +87,24 @@ endmodule
 module displayLogic(
     input clk,
     input [6:0] sseg0, sseg1,
-    output reg [1:0] an, 
+    input [7:0] code,
+    output reg [3:0] an, 
     output reg [6:0] sseg
     );
-    reg state, next_state;
+    reg [1:0] state, next_state;
     reg [9:0] counter;
     initial begin
         state = 2'b00;
         counter = 0;
+        an = 4'b1111;
     end 
     
     always@(*) begin
-    if(state)
-        begin an = 2'b01; next_state = 1'b0; sseg = sseg1; end
-    else
-        begin an = 2'b10; next_state = 1'b1; sseg = sseg0; end        
+    case(state)
+        2'b00 : begin an = 4'b1111; if(code != 0) next_state = 2'b01; else next_state = 2'b00; sseg = sseg0; end
+        2'b01 : begin an = 4'b1101; next_state = 2'b10; sseg = sseg1; end
+        2'b10 : begin an = 4'b1110; next_state = 2'b01; sseg = sseg0; end    
+        endcase    
     end
     
     always@(posedge clk) begin        
@@ -119,36 +118,45 @@ endmodule
 //captures serial input using a shift register
 module inputcapture(
     input ps2clk, ps2data,
-    output reg [21:0] code
+    inout [21:0] code
     );
     
-    initial code = 0;
+    reg [21:0] code_temp;
+    
+    initial code_temp = 0;
+    
+    assign code = code_temp;
     
     always@(negedge ps2clk) begin
-        code[20:0] = code[21:1];
-        code[21] = ps2data;   
+        code_temp[20:0] = code[21:1];
+        code_temp[21] = ps2data;   
     end
 endmodule
 
-//divides clock to 10 hz for strobe
-module clkdiv10hz(
-    input clk, 
-    output reg clk_out
-    );
 
-    reg [26:0] COUNT;
+//flashes for 100 ms following change in code
+module strobe(
+    input clk,
+    input [7:0] code,
+    output reg strobe
+    );
+    reg [7:0] code_prev;
+    reg [26:0] count;
     
     initial begin
-    COUNT = 0;
+    code_prev = 0;
+    strobe = 0;
+    count = 0;
     end
-   
-    always @(posedge clk)
-    begin
-        if (COUNT == 1000000) begin
-        clk_out = ~clk_out;
-        COUNT = 0;
-        end
-       
-    else COUNT = COUNT + 1;
+    
+    always@(posedge clk) begin
+        if(code != code_prev) begin count = 1; strobe = 1; end
+            else begin if((count != 0)&&(count < 2000000)) count = count + 1;
+                            else if(count == 2000000) begin count = 0; strobe = 0; end
+            end
+        code_prev <= code;
     end
+    
+
+    
 endmodule
