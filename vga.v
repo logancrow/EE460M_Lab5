@@ -87,10 +87,12 @@ module color(
     input clk_25MHz,
     input [7:0] switch,
     input visible,
-    output reg [11:0] color
+    output reg [11:0] color,
+    output reg [7:0] switch1
 );
 
     always@(*) begin
+        switch1 <= switch;
         if(visible)begin
             case(switch)
             8'b00000001: color = {4'h0,4'h0,4'h0}; //black
@@ -101,9 +103,10 @@ module color(
             8'b00100000: color = {4'hF,4'h0,4'hF}; //magenta
             8'b01000000: color = {4'hF,4'hF,4'h0}; //yellow
             8'b10000000: color = {4'hF,4'hF,4'hF}; //white
-            default: color = 6'h000; //black
+            default: color = 12'h000; //black
             endcase
         end
+        else color = 12'h000;
     end
 endmodule
 
@@ -122,7 +125,7 @@ module clkdiv25MHz(
    
     always @(posedge clk)
     begin
-        if (COUNT == 3) begin
+        if (COUNT == 1) begin
         clk_out = ~clk_out;
         COUNT = 0;
         end
