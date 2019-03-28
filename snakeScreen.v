@@ -23,6 +23,38 @@
 module snakeScreen(
 
     );
+endmodule 
+module drawBlock(
+    input [9:0] hcount, vcount, High, Low, Left, Right,
+    input visible, clk_5Hz,
+    output draw
+);
+
+reg [9:0] hcount1, vcount1, High1, Low1, Left1, Right1;
+reg visible1, draw1;
+
+initial begin
+    hcount1 = hcount;
+    vcount1 = vcount;
+    High1 = High;
+    Low1 = Low;
+    Left1 = Left;
+    Right1 = Right;
+    visible1 = visible;
+end
+
+always @(posedge clk_5Hz) begin
+    if(visible1)begin
+        if((hcount1>=High1)&&(hcount1<=Low1)) begin
+            if((vcount1>=Left1)&&(vcount1<=Right1)) draw1 = 1'b1;
+        end
+        else draw1 = 0;
+    end
+    else draw1 = 0;
+end
+
+assign draw = draw1;
+
 endmodule
 
 module direction(
