@@ -92,3 +92,107 @@ module decoder(
         endcase
     end
 endmodule
+
+//divides clock to 25MHz
+module clkdiv25MHz(
+    input clk, 
+    output reg clk_out
+    );
+    
+    reg [1:0] COUNT;
+    
+    initial begin
+    COUNT = 0;
+    clk_out = 1;
+    end
+   
+    always @(posedge clk)
+    begin
+        if (COUNT == 1) begin
+        clk_out = ~clk_out;
+        COUNT = 0;
+        end
+       
+    else COUNT = COUNT + 1;
+    end
+endmodule
+
+//draws screen all black upon escape
+module drawblack(
+    input clk_25MHz, escape,
+    output reg hsync, vsync, visible
+    );
+
+    reg [9:0] hcount, vcount;
+    reg hsig, vsig;
+    
+    initial begin
+    hcount = 800;
+    vcount = 525;
+    hsync = 1;
+    vsync = 1;
+    visible = 1;
+    end 
+
+    always@(posedge clk_25MHz) begin
+        if(hcount == 799) begin
+            hcount = 0;
+            if(vcount <= 524) vcount = vcount + 1;
+                else if(escape) vcount = 0;
+        end
+            else if(hcount < 799) hcount = hcount + 1;
+                else if(escape) hcount = 0;
+    
+        if((659<=hcount) && (hcount <= 755)) hsig = 0;
+        else hsig = 1;
+    
+        if((493<=vcount)&&(vcount<=494)) vsig = 0;
+        else vsig = 1;
+    
+        hsync = hsig;
+        vsync = vsig;
+        if(hsig && vsig) visible = 1;
+        else visible = 0;
+    end
+
+endmodule
+
+//draws screen upon starting and pressing start button
+module drawinitial(
+    input clk_25MHz, escape,
+    output reg hsync, vsync, visible, start
+    );
+
+    reg [9:0] hcount, vcount;
+    reg hsig, vsig;
+    
+    initial begin
+    hcount = 0;
+    vcount = 0;
+    hsync = 1;
+    vsync = 1;
+    visible = 1;
+    end 
+
+    always@(posedge clk_25MHz) begin
+        if(hcount == 799) begin
+            hcount = 0;
+            if(vcount <= 524) vcount = vcount + 1;
+                else if(start) vcount = 0;
+        end
+            else if(hcount < 799) hcount = hcount + 1;
+                else if(start) hcount = 0;
+    
+        if((659<=hcount) && (hcount <= 755)) hsig = 0;
+        else hsig = 1;
+    
+        if((493<=vcount)&&(vcount<=494)) vsig = 0;
+        else vsig = 1;
+    
+        hsync = hsig;
+        vsync = vsig;
+        if(hsig && vsig) visible = 1;
+        else visible = 0;
+    end
+
+endmodule
