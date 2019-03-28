@@ -30,13 +30,13 @@ module keyboard(
    wire [6:0] sseg0, sseg1;
    wire [21:0] code;
    wire [7:0] code_out;
-   reg [7:0] hold, code_hold;
+   reg [7:0] hold;//, code_hold;
    
    assign code_out = hold;
    
    initial begin
    hold = 0;
-   code_hold = 0;
+   //code_hold = 0;
    end
    
    
@@ -49,9 +49,8 @@ module keyboard(
    
    strobe s0 (clk,code_out,strobe);
    
-   always@(*)begin
-        if(code[8:1] == 8'hf0) begin hold = code[19:12]; code_hold = code[19:12]; end
-            else hold = code_hold;
+   always@(posedge (code[8:1] == 8'hf0))begin
+        hold = code[19:12]; 
    end
    
 endmodule
