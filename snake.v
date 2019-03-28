@@ -22,15 +22,67 @@
 
 module snake(
     input clk, ps2clk, ps2data,
-    output [11:0] color,
-    output hsync, vsync
+    output reg [11:0] color,
+    output reg hsync, vsync
     );
     
-    wire up, down, left, right, start, resume, pause, escape;
+    wire up, down, left, right, start, resume, pause, escape, clk5hz, clk25Mhz, visible, hsig, vsig;
+    wire [1:0] direction; //down = 00  up = 01  right = 10  left = 11
+    wire [9:0] hcount, vcount, block1h, block1v, block2h, block2v, block3h, block3v, block4h, block4v;
+    reg screen [639:0][479:0];
+    reg [11:0] RGB;
+    reg [9:0] i,j;
+    
+    initial begin
+        RGB = 12'h000;   
+         for(i = 0;i < 640;i=i+1) begin
+            for(j = 0;j < 480;j=j+1) begin
+                screen[i][j] = 0;
+            end
+        end 
+    end
     
     keyboardcapture k0 (ps2clk,ps2data,up,down,left,right,start,resume,pause,escape);
     
+    direction d0 (left,right,up,down,clk,direction);
+    
+    clkdiv25MHz c0 (clk,clk25Mhz);
+    clkdiv5Hz c1 (clk,clk5hz);
+    
+    signals s0 (clk25Mhz,hsig,vsig,visible,hcount,vcount);
+    
+    movement m0 (start,pause,escape,resume,clk5hz,direction,block1h,block1v,block2h,block2v,block3h,block3v,block4h,block4v);
+    
+    //color selector
+    always@(*) begin
+        if(visible)begin
+            if(~escape) begin
+                if(screen[hcount][vcount]) RGB = {4'h0,4'h0,4'hF}; //blue
+                    else RGB = {4'hF,4'hF,4'hF}; //white
+            end
+            else color = 12'h000;
+        end
+        else color = 12'h000; //black
+    end
+    
+    always@(*) begin
+        for(i = 0;i < 640;i=i+1) begin
+            for(j = 0;j < 480;j=j+1) begin
+                if((((block1h - 9 <= i) && (i <= block1h)) && ((block1v <= j) && (j <= block1v + 9))) || (((block2h - 9 <= i) && (i <= block2h)) && ((block2v <= j) && (j <= block2v + 9))) || (((block3h - 9 <= i) && (i <= block3h)) && ((block3v <= j) && (j <= block3v + 9))) || (((block4h - 9 <= i) && (i <= block4h)) && ((block4v <= j) && (j <= block4v + 9))))
+                    screen[i][j] = 1;
+                else screen[i][j] = 0;
+            end
+        end
+    end
+    
+    always@(posedge clk) begin
+        color <= RGB;
+        hsync <= hsig;
+        vsync <= vsig;
+    end
+    
 endmodule
+
 
 //captures data from keyboard and returns signals based on most recent key pressed
 module keyboardcapture(
@@ -54,6 +106,7 @@ module keyboardcapture(
     
 endmodule
 
+
 //captures serial input using a shift register
 module inputcapture(
     input ps2clk, ps2data,
@@ -71,6 +124,7 @@ module inputcapture(
         code_temp[21] = ps2data;   
     end
 endmodule
+
 
 //decodes 8 bit break code into output signals
 module decoder(
@@ -92,6 +146,7 @@ module decoder(
         endcase
     end
 endmodule
+
 
 //divides clock to 25MHz
 module clkdiv25MHz(
@@ -117,53 +172,91 @@ module clkdiv25MHz(
     end
 endmodule
 
-//draws screen all black upon escape
-module drawblack(
-    input clk_25MHz, escape,
-    output reg hsync, vsync, visible
-    );
 
-    reg [9:0] hcount, vcount;
-    reg hsig, vsig;
+//divides clock to 5hz
+module clkdiv5Hz(
+    input clk, 
+    output reg clk_out
+    );
+    
+    reg [23:0] COUNT;
     
     initial begin
-    hcount = 800;
-    vcount = 525;
-    hsync = 1;
-    vsync = 1;
-    visible = 1;
-    end 
-
-    always@(posedge clk_25MHz) begin
-        if(hcount == 799) begin
-            hcount = 0;
-            if(vcount <= 524) vcount = vcount + 1;
-                else if(escape) vcount = 0;
-        end
-            else if(hcount < 799) hcount = hcount + 1;
-                else if(escape) hcount = 0;
-    
-        if((659<=hcount) && (hcount <= 755)) hsig = 0;
-        else hsig = 1;
-    
-        if((493<=vcount)&&(vcount<=494)) vsig = 0;
-        else vsig = 1;
-    
-        hsync = hsig;
-        vsync = vsig;
-        if(hsig && vsig) visible = 1;
-        else visible = 0;
+    COUNT = 0;
+    clk_out = 1;
     end
-
+   
+    always @(posedge clk)
+    begin
+        if (COUNT == 9999999) begin
+        clk_out = ~clk_out;
+        COUNT = 0;
+        end
+       
+    else COUNT = COUNT + 1;
+    end
 endmodule
 
-//draws screen upon starting and pressing start button
-module drawinitial(
-    input clk_25MHz, escape,
-    output reg hsync, vsync, visible, start
+
+//state machine controlling direction of snake
+module direction(
+    input left, right, up, down, clk,
+    output reg [1:0] direction
+    );
+    reg [1:0] state, nextstate;
+    wire [3:0] buttons;
+    
+    initial begin
+    direction = 2'b10;
+    state = 2'b10;
+    end
+    
+    assign buttons = {left,right,up,down};
+
+    always@(*) begin
+        case(state)
+        2'b00: //down
+            case(buttons)
+                4'b1000: nextstate = 2'b11;
+                4'b0100: nextstate = 2'b10;
+                default: nextstate = state;
+            endcase
+        2'b01: //up
+            case(buttons)
+                4'b1000: nextstate = 2'b11;
+                4'b0100: nextstate = 2'b10;
+                default: nextstate = state;
+            endcase            
+        2'b10: //right
+            case(buttons)
+                4'b0010: nextstate = 2'b01;
+                4'b0001: nextstate = 2'b00;
+                default: nextstate = state;
+            endcase
+        2'b11: //left
+            case(buttons)
+                4'b0010: nextstate = 2'b01;
+                4'b0001: nextstate = 2'b00;
+                default: nextstate = state;
+            endcase
+        endcase
+    end
+    
+    always@(posedge clk) begin
+        state = nextstate;
+        direction = nextstate;
+    end
+    
+endmodule
+
+
+//passes through every pixel on the screen
+module signals(
+    input clk_25MHz,
+    output reg hsync, vsync, visible,
+    output reg [9:0] hcount, vcount
     );
 
-    reg [9:0] hcount, vcount;
     reg hsig, vsig;
     
     initial begin
@@ -177,17 +270,16 @@ module drawinitial(
     always@(posedge clk_25MHz) begin
         if(hcount == 799) begin
             hcount = 0;
-            if(vcount <= 524) vcount = vcount + 1;
-                else if(start) vcount = 0;
+            if(vcount == 524) vcount = 0;
+                else vcount = vcount + 1;
         end
-            else if(hcount < 799) hcount = hcount + 1;
-                else if(start) hcount = 0;
+            else hcount = hcount + 1;
     
         if((659<=hcount) && (hcount <= 755)) hsig = 0;
-        else hsig = 1;
+            else hsig = 1;
     
         if((493<=vcount)&&(vcount<=494)) vsig = 0;
-        else vsig = 1;
+            else vsig = 1;
     
         hsync = hsig;
         vsync = vsig;
@@ -195,4 +287,130 @@ module drawinitial(
         else visible = 0;
     end
 
+endmodule
+
+
+//moves snake based on parameters
+module movement(
+    input start, pause, escape, resume, clk5hz,
+    input [1:0] direction,
+    inout [9:0] block1h, block1v, block2h, block2v, block3h, block3v, block4h, block4v
+    );
+    
+    reg [1:0] state, next_state;
+    reg [9:0] block1h_next, block1v_next, block2h_next, block2v_next, block3h_next, block3v_next, block4h_next, block4v_next, block1h_hold, block1v_hold, block2h_hold, block2v_hold, block3h_hold, block3v_hold, block4h_hold, block4v_hold;
+    reg crash;
+    
+    assign block1h = block1h_hold;
+    assign block1v = block1v_hold;    
+    assign block2h = block2h_hold;
+    assign block2v = block2v_hold;
+    assign block3h = block3h_hold;
+    assign block3v = block3v_hold;    
+    assign block4h = block4h_hold;
+    assign block4v = block4v_hold;    
+        
+    initial begin
+        state = 2'b00;
+    end
+    
+    always@(*) begin
+        case(state)
+            2'b00 : begin if(start) next_state = 2'b01;
+                                else next_state = 2'b00;
+                          block1h_next = 39;
+                          block1v_next = 240;
+                          block2h_next = 29;
+                          block2v_next = 240;
+                          block3h_next = 19;
+                          block3v_next = 240;
+                          block4h_next = 9;
+                          block4v_next = 240;                         
+                    end
+            2'b01 : begin case({crash,escape,pause})
+                            3'b100 : next_state = 2'b00;
+                            3'b010 : next_state = 2'b00;
+                            3'b001 : next_state = 2'b10;
+                            default : next_state = 2'b01;
+                          endcase
+                          case(direction)
+                            2'b00 : begin block1h_next = block1h; block1v_next = block1v + 10; end
+                            2'b01 : begin block1h_next = block1h; block1v_next = block1v - 10; end
+                            2'b10 : begin block1h_next = block1h + 10; block1v_next = block1v; end
+                            2'b11 : begin block1h_next = block1h - 10; block1v_next = block1v; end
+                          endcase
+                          block2h_next = block1h;
+                          block2v_next = block1v;
+                          block3h_next = block2h;
+                          block3v_next = block2v;
+                          block4h_next = block3h;
+                          block4v_next = block3v;                          
+                    end
+            2'b10 : begin case({resume,start,escape})
+                            3'b100 : begin 
+                                        next_state = 2'b01; 
+                                        block1h_next = block1h;
+                                        block1v_next = block1v;
+                                        block2h_next = block2h;
+                                        block2v_next = block2v;
+                                        block3h_next = block3h;
+                                        block3v_next = block3v;
+                                        block4h_next = block4h;
+                                        block4v_next = block4v;                                       
+                                     end
+                            3'b010 : begin 
+                                        next_state = 2'b01; 
+                                        block1h_next = 39;
+                                        block1v_next = 240;
+                                        block2h_next = 29;
+                                        block2v_next = 240;
+                                        block3h_next = 19;
+                                        block3v_next = 240;
+                                        block4h_next = 9;
+                                        block4v_next = 240;
+                                     end
+                            3'b001 : begin 
+                                        next_state = 2'b00; 
+                                        block1h_next = 39;
+                                        block1v_next = 240;
+                                        block2h_next = 29;
+                                        block2v_next = 240;
+                                        block3h_next = 19;
+                                        block3v_next = 240;
+                                        block4h_next = 9;
+                                        block4v_next = 240;                                        
+                                     end
+                            default : begin 
+                                        next_state = 2'b10;
+                                        block1h_next = block1h;
+                                        block1v_next = block1v;
+                                        block2h_next = block2h;
+                                        block2v_next = block2v;
+                                        block3h_next = block3h;
+                                        block3v_next = block3v;
+                                        block4h_next = block4h;
+                                        block4v_next = block4v;                                         
+                                      end                           
+                          endcase
+                    
+                    end
+        endcase
+    end
+    
+    always@(posedge clk5hz) begin
+        state <= next_state;
+        block1h_hold <= block1h_next;
+        block1v_hold <= block1v_next;
+        block2h_hold <= block2h_next;
+        block2v_hold <= block2v_next;
+        block3h_hold <= block3h_next;
+        block3v_hold <= block3v_next;
+        block4h_hold <= block4h_next;
+        block4v_hold <= block4v_next;
+    end
+    
+    always@(*) begin
+        if((block1h > 639) || (block1h < 9) || (block1v > 630) || (block1v < 1)) crash = 1;
+            else crash = 0;   
+    end
 endmodule
