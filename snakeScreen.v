@@ -21,9 +21,91 @@
 
 
 module snakeScreen(
-
+    input clk, up, dowm, left, right, start, resume, pause, esc,
+    output reg [11:0] color,
+    output reg hsync, vsync
     );
-endmodule 
+    
+    wire clk_5Hz, clk_25MHz, hsig, vsig, visible, newBlock, eraseBlock;
+    wire [9:0] hcount, vcount, frontHigh, frontLow, frontLeft, frontRight, endHigh, endLow, endLeft, endRight;
+    wire [11:0] RBG;
+    
+    clkdiv5Hz c0(clk,clk_5Hz);
+    clkdiv25MHz c1 (clk, clk_25MHz);
+    signals s0 (clk_25MHz, hsig, vsig, visible, hcount, vcount);
+    drawBlock d0 (hcount, vcount, frontHigh, frontLow, frontLeft, frontRight, visible, clk_5Hz, newBlock);
+    drawBlock d1 (hcount, vcount, endHigh, endLow, endLeft, endRight, visible, clk_5Hz, eraseBlock);
+    color c3 (clk_25MHz, newBlock, eraseBlock, RBG);
+    
+    always @(posedge clk)begin
+    hsync <= hsig;
+    vsync <= vsig;
+    color <= RBG;
+   end
+    
+endmodule
+
+module color(
+    input clk_25MHz,
+    input newBlock,
+    input eraseBlock,
+    output reg [11:0] color
+);
+wire [1:0] choice;
+ assign choice = {newBlock,eraseBlock};
+
+    always@(*) begin
+        case(choice)
+        2'b00: color = {4'hF,4'hF,4'hF}; //white
+        2'b10: color = {4'h0,4'h0,4'hF}; //blue
+        2'b01: color = {4'hF,4'hF,4'hF}; //white
+        default: color = 12'h000; //black
+        endcase
+    end
+endmodule
+
+module signals(
+input clk_25MHz,
+output reg hsync, vsync, visible,
+output [9:0] hcount, vcount
+);
+
+reg [9:0] hcount1, vcount1;
+reg hsig, vsig;
+    
+initial begin
+hcount1 = 0;
+vcount1 = 0;
+hsync = 1;
+vsync = 1;
+visible = 1;
+end 
+
+always@(posedge clk_25MHz) begin
+    if(hcount == 799) begin
+        hcount1 = 0;
+        if(vcount1 == 524) vcount1 = 0;
+        else vcount1 = vcount1 + 1;
+    end
+    else hcount1 = hcount1 + 1;
+    
+    if((659<=hcount1) && (hcount1 <= 755)) hsig = 0;
+    else hsig = 1;
+    
+    if((493<=vcount1)&&(vcount1<=494)) vsig = 0;
+    else vsig = 1;
+    
+    hsync = hsig;
+    vsync = vsig;
+    if(hsig && vsig) visible = 1;
+    else visible = 0;
+end
+
+assign hcount = hcount1;
+assign vcount = vcount1;
+
+endmodule
+
 module drawBlock(
     input [9:0] hcount, vcount, High, Low, Left, Right,
     input visible, clk_5Hz,
@@ -232,6 +314,30 @@ module clkdiv5Hz(
     always @(posedge clk)
     begin
         if (COUNT == 9999999) begin
+        clk_out = ~clk_out;
+        COUNT = 0;
+        end
+       
+    else COUNT = COUNT + 1;
+    end
+endmodule
+
+//divides clock to 25MHz
+module clkdiv25MHz(
+    input clk, 
+    output reg clk_out
+    );
+    
+    reg [1:0] COUNT;
+    
+    initial begin
+    COUNT = 0;
+    clk_out = 1;
+    end
+   
+    always @(posedge clk)
+    begin
+        if (COUNT == 1) begin
         clk_out = ~clk_out;
         COUNT = 0;
         end
