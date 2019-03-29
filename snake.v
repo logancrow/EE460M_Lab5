@@ -26,19 +26,19 @@ module snake(
     output reg hsync, vsync
     );
     
-    wire up, down, left, right, start, resume, pause, escape, clk5hz, clk25Mhz, visible, hsig, vsig;
+    wire up, down, left, right, start, resume, pause, escape, clk5hz, clk25Mhz, visible, hsig, vsig, toggle;
     wire [1:0] direction; //down = 00  up = 01  right = 10  left = 11
     wire [9:0] hcount, vcount, block1h, block1v, block2h, block2v, block3h, block3v, block4h, block4v;
     wire [11:0] RGB;
     reg [9:0] i,j;
     
     
-    keyboardcapture k0 (ps2clk,ps2data,up,down,left,right,start,resume,pause,escape);
+    keyboardcapture k0 (ps2clk,ps2data,up,down,left,right,start,resume,pause,escape,toggle);
     
-    direction d0 (left,right,up,down,clk,direction);
+    direction d0 (left,right,up,down,clk,start,direction);
     
     clkdiv25MHz c0 (clk,clk25Mhz);
-    clkdiv5Hz c1 (clk,clk5hz);
+    clkdiv5Hz c1 (clk,clk5hz,toggle);
     
     signals s0 (clk25Mhz,hsig,vsig,visible,hcount,vcount);
     
@@ -58,7 +58,7 @@ endmodule
 //captures data from keyboard and returns signals based on most recent key pressed
 module keyboardcapture(
     input ps2clk, ps2data,
-    output up, down, left, right, start, resume, pause, escape    
+    output up, down, left, right, start, resume, pause, escape, toggle    
     );
     
     wire [21:0] shiftreg;
@@ -69,7 +69,7 @@ module keyboardcapture(
     
     inputcapture i0 (ps2clk,ps2data,shiftreg);
     
-    decoder d0 (code,up,down,left,right,start,resume,pause,escape);
+    decoder d0 (code,toggle,up,down,left,right,start,resume,pause,escape);
     
     always@(posedge (shiftreg[8:1] == 8'hf0))begin
          code_reg = shiftreg[19:12]; 
@@ -100,8 +100,17 @@ endmodule
 //decodes 8 bit break code into output signals
 module decoder(
     input [7:0] code,
+    inout toggle,
     output reg up, down, left, right, start, resume, pause, escape
     );
+    
+    reg toggle1;
+    
+    initial begin
+        toggle1 = 0;
+    end
+    
+    assign toggle = toggle1;
     
     always@(*) begin
         case(code)
@@ -113,6 +122,7 @@ module decoder(
             8'h2d : {up,down,left,right,start,resume,pause,escape} = 8'b00000100;
             8'h4d : {up,down,left,right,start,resume,pause,escape} = 8'b00000010;
             8'h76 : {up,down,left,right,start,resume,pause,escape} = 8'b00000001;
+            8'h2c : begin {up,down,left,right,start,resume,pause,escape} = 8'b00000000; toggle1 = ~toggle; end
             default : {up,down,left,right,start,resume,pause,escape} = 8'b00000000;
         endcase
     end
@@ -147,67 +157,80 @@ endmodule
 //divides clock to 5hz
 module clkdiv5Hz(
     input clk, 
-    output reg clk_out
+    output reg clk_out,
+    input toggle
     );
     
-    reg [23:0] COUNT;
+    reg [23:0] COUNT, MAX;
+    
     
     initial begin
     COUNT = 0;
     clk_out = 1;
+    MAX = 9999999;
     end
    
     always @(posedge clk)
     begin
-        if (COUNT == 9999999) begin
+        if (COUNT >= MAX) begin
         clk_out = ~clk_out;
         COUNT = 0;
         end
        
     else COUNT = COUNT + 1;
     end
+    
+    always@(*) begin
+        if(toggle) MAX = 2499999;
+            else MAX = 9999999;
+    end 
+    
 endmodule
 
 
 //state machine controlling direction of snake
 module direction(
-    input left, right, up, down, clk,
+    input left, right, up, down, clk, start,
     output reg [1:0] direction
     );
     reg [1:0] state, nextstate;
-    wire [3:0] buttons;
+    wire [4:0] buttons;
     
     initial begin
     direction = 2'b10;
     state = 2'b10;
     end
     
-    assign buttons = {left,right,up,down};
+    assign buttons = {left,right,up,down,start};
 
     always@(*) begin
         case(state)
         2'b00: //down
             case(buttons)
-                4'b1000: nextstate = 2'b11;
-                4'b0100: nextstate = 2'b10;
+                5'b10000: nextstate = 2'b11;
+                5'b01000: nextstate = 2'b10;
+                5'b00001: nextstate = 2'b10;
                 default: nextstate = state;
             endcase
         2'b01: //up
             case(buttons)
-                4'b1000: nextstate = 2'b11;
-                4'b0100: nextstate = 2'b10;
+                5'b10000: nextstate = 2'b11;
+                5'b01000: nextstate = 2'b10;
+                5'b00001: nextstate = 2'b10;
                 default: nextstate = state;
             endcase            
         2'b10: //right
             case(buttons)
-                4'b0010: nextstate = 2'b01;
-                4'b0001: nextstate = 2'b00;
+                5'b00100: nextstate = 2'b01;
+                5'b00010: nextstate = 2'b00;
+                5'b00001: nextstate = 2'b10;
                 default: nextstate = state;
             endcase
         2'b11: //left
             case(buttons)
-                4'b0010: nextstate = 2'b01;
-                4'b0001: nextstate = 2'b00;
+                5'b00100: nextstate = 2'b01;
+                5'b00010: nextstate = 2'b00;
+                5'b00001: nextstate = 2'b10;
                 default: nextstate = state;
             endcase
         endcase
@@ -254,7 +277,7 @@ module signals(
     
         hsync = hsig;
         vsync = vsig;
-        if(hsig && vsig) visible = 1;
+        if((hcount >= 0)&&(hcount <= 639)&&(vcount >= 0)&&(vcount <=479)) visible = 1;
         else visible = 0;
     end
 
@@ -299,7 +322,7 @@ module movement(
                           block4v_next = 240;                         
                     end
             2'b01 : begin case({crash,escape,pause})
-                            3'b100 : next_state = 2'b00;
+                            3'b100 : next_state = 2'b11;
                             3'b010 : next_state = 2'b00;
                             3'b001 : next_state = 2'b10;
                             default : next_state = 2'b01;
@@ -365,6 +388,28 @@ module movement(
                           endcase
                     
                     end
+        2'b11 : begin
+                    if(start) begin next_state = 2'b01;
+                                    block1h_next = 39;
+                                    block1v_next = 240;
+                                    block2h_next = 29;
+                                    block2v_next = 240;
+                                    block3h_next = 19;
+                                    block3v_next = 240;
+                                    block4h_next = 9;
+                                    block4v_next = 240;
+                                    end
+                        else  begin next_state = 2'b11;
+                                    block1h_next = block1h;
+                                    block1v_next = block1v;
+                                    block2h_next = block2h;
+                                    block2v_next = block2v;
+                                    block3h_next = block3h;
+                                    block3v_next = block3v;
+                                    block4h_next = block4h;
+                                    block4v_next = block4v;
+                                    end                     
+                end
         endcase
     end
     
@@ -381,7 +426,7 @@ module movement(
     end
     
     always@(*) begin
-        if((block1h > 639) || (block1h < 9) || (block1v > 630) || (block1v < 1)) crash = 1;
+        if((block1h > 639) || (block1h < 9) || (block1v > 479) || (block1v < 1)) crash = 1;
             else crash = 0;   
     end
 endmodule
