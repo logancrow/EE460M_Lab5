@@ -77,7 +77,7 @@ always@(posedge clk_25MHz) begin
     
     hsync = hsig;
     vsync = vsig;
-    if(hsig && vsig) visible = 1;
+    if((hcount>=0)&&(hcount<=639)&&(vcount>=0)&&(vcount<=479)) visible = 1;
     else visible = 0;
 end
 
