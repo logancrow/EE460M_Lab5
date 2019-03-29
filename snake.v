@@ -29,18 +29,9 @@ module snake(
     wire up, down, left, right, start, resume, pause, escape, clk5hz, clk25Mhz, visible, hsig, vsig;
     wire [1:0] direction; //down = 00  up = 01  right = 10  left = 11
     wire [9:0] hcount, vcount, block1h, block1v, block2h, block2v, block3h, block3v, block4h, block4v;
-    reg screen [639:0][479:0];
-    reg [11:0] RGB;
+    wire [11:0] RGB;
     reg [9:0] i,j;
     
-    initial begin
-        RGB = 12'h000;   
-         for(i = 0;i < 640;i=i+1) begin
-            for(j = 0;j < 480;j=j+1) begin
-                screen[i][j] = 0;
-            end
-        end 
-    end
     
     keyboardcapture k0 (ps2clk,ps2data,up,down,left,right,start,resume,pause,escape);
     
@@ -53,27 +44,7 @@ module snake(
     
     movement m0 (start,pause,escape,resume,clk5hz,direction,block1h,block1v,block2h,block2v,block3h,block3v,block4h,block4v);
     
-    //color selector
-    always@(*) begin
-        if(visible)begin
-            if(~escape) begin
-                if(screen[hcount][vcount]) RGB = {4'h0,4'h0,4'hF}; //blue
-                    else RGB = {4'hF,4'hF,4'hF}; //white
-            end
-            else color = 12'h000;
-        end
-        else color = 12'h000; //black
-    end
-    
-    always@(*) begin
-        for(i = 0;i < 640;i=i+1) begin
-            for(j = 0;j < 480;j=j+1) begin
-                if((((block1h - 9 <= i) && (i <= block1h)) && ((block1v <= j) && (j <= block1v + 9))) || (((block2h - 9 <= i) && (i <= block2h)) && ((block2v <= j) && (j <= block2v + 9))) || (((block3h - 9 <= i) && (i <= block3h)) && ((block3v <= j) && (j <= block3v + 9))) || (((block4h - 9 <= i) && (i <= block4h)) && ((block4v <= j) && (j <= block4v + 9))))
-                    screen[i][j] = 1;
-                else screen[i][j] = 0;
-            end
-        end
-    end
+    colorselector c2 (hcount,vcount,block1h,block1v,block2h,block2v,block3h,block3v,block4h,block4v,escape,start,clk,visible,RGB);
     
     always@(posedge clk) begin
         color <= RGB;
@@ -413,4 +384,43 @@ module movement(
         if((block1h > 639) || (block1h < 9) || (block1v > 630) || (block1v < 1)) crash = 1;
             else crash = 0;   
     end
+endmodule
+
+
+//picks color based on parameters
+module colorselector(
+    input [9:0] hcount, vcount, block1h, block1v, block2h, block2v, block3h, block3v, block4h, block4v,
+    input escape, start, clk, visible,
+    output  reg [11:0] color
+    );
+    
+    reg state, next_state;
+    
+    initial begin
+    state = 0;
+    end
+    
+    always@(*) begin
+       case(state)
+            1'b0 : if(start) next_state = 1'b1; else next_state = 1'b0;
+            1'b1 : if(escape) next_state = 1'b0; else next_state = 1'b1;
+       endcase        
+    end
+    
+    always@(posedge clk) begin
+        state <= next_state;
+    end
+    
+    always@(*) begin
+        if(visible)begin
+            if(state) begin
+                if((((block1h - 9 <= hcount) && (hcount <= block1h)) && ((block1v <= vcount) && (vcount <= block1v + 9))) || (((block2h - 9 <= hcount) && (hcount <= block2h)) && ((block2v <= vcount) && (vcount <= block2v + 9))) || (((block3h - 9 <= hcount) && (hcount <= block3h)) && ((block3v <= vcount) && (vcount <= block3v + 9))) || (((block4h - 9 <= hcount) && (hcount <= block4h)) && ((block4v <= vcount) && (vcount <= block4v + 9))))
+                    color = {4'h0,4'h0,4'hF}; //blue
+                else color = {4'hF,4'hF,4'hF}; //white
+            end
+            else color = 12'h000;
+        end
+        else color = 12'h000; //black
+    end
+    
 endmodule
